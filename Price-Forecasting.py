@@ -4,14 +4,14 @@ import pandas as pd
 #pip.main(['install','tensorflow'])
 import seaborn as sns
 import matplotlib.pyplot as plt
-from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.stattools import adfuller
-import statsmodels.api as sm
 from pandas.plotting import autocorrelation_plot
 from sklearn.metrics import mean_squared_error
 import datetime
 
 df = pd.read_csv("C:/Users/Nagulan/Desktop/CreaTech 2k24/CreaTech-2k24/Material-OHLC.csv")
+
+'''Data Cleaning'''
 
 cleaner = ['Open','High','Low','Prev.close','ltp','Close','vwap','52W H','52W L','Volume','Value','No of trades']
 
@@ -21,6 +21,9 @@ for i in range(0, len(df['Date'])):
 for j in range(0, len(df)):
     for k in cleaner:
         df[k][j] = float(df[k][j].replace(',','')) 
+
+df['Date'] = pd.to_datetime(df['Date'])
+df.set_index('Date', inplace=True)
 '''
 plt.figure(figsize=(13,7))
 sns.countplot(x="Material", data=df, palette='hls')
@@ -43,12 +46,7 @@ plt.legend()
 plt.grid(True)
 plt.show()'''
 
-df['Date'] = pd.to_datetime(df['Date'])
-df.set_index('Date', inplace=True)
-
-# Feature engineering: Creating lag features
-#df['lag1'] = df['Close'].shift(1)
-#df['lag2'] = df['Close'].shift(2)
+'''Augmented Dickey-Fuller(ADF) Test for recording the statistical data'''
 
 test_result = adfuller(df['Close'])
 
@@ -57,12 +55,14 @@ def adfuller_test(sales):
     labels = ['ADF Test Statistic','p-value','#Lags Used','Number of Observations Used']
     for value, label in zip(result,labels):
         print(label+' : '+str(value) )
-    if result[1] <= 0.05:
+    if result[1] <= 0.05:       # more negative, the stronger the rejection of null hypothesis
         print("Strong evidence against the null hypothesis(Ho), reject the null hypothesis. Data has no unit root and is stationary")
     else:
         print("Weak evidence against null hypothesis, time series has a unit root, indicating it is non-stationary ")
 
 adfuller_test(df['Close'])
+
+#plt.show()
 
 df['Seasonal First Difference']=df['Close']-df['Close'].shift(12)
 
@@ -71,8 +71,7 @@ adfuller_test(df['Seasonal First Difference'].dropna())
 #df['Seasonal First Difference'].plot()
 #plt.show()
 
-'''print(df['Close'])
-
+'''
 autocorrelation_plot(df['Close'])
 plt.show()'''
 
@@ -92,7 +91,7 @@ for material in materials:
     plt.legend()
     plt.show()
 
-'''Feature engineering to analyze and select most important feature'''
+'''Feature Engineering to analyze and select most important feature'''
 
 #Lasso Regression for Feature Selection
 from sklearn.linear_model import Lasso
@@ -137,8 +136,8 @@ print("\nFeature Importance (Random Forest):\n")
 for feature, importance in zip(X.columns, feature_importance):
     print(f"{feature}: {importance}")
 
-'''Seasonal-trend decomposition'''
-'''
+'''Seasonal-trend Decomposition'''
+
 from statsmodels.tsa.seasonal import seasonal_decompose
 
 materials = df['Material'].unique()
@@ -176,7 +175,7 @@ for m in materials:
     plt.title('Residual Component')
 
     plt.tight_layout()
-    plt.show()'''
+    #plt.show()
 
 '''Forecasting using Long-Short Term Memory(LSTM) model'''
 
@@ -262,4 +261,143 @@ plt.title(f'{cast.upper()}\nLSTM Forecast')
 plt.xlabel('Time Steps')
 plt.ylabel('Close Price (in INR)')
 plt.legend()
-plt.show()
+#plt.show()
+
+'''Demand Projection'''
+
+from tensorflow.keras.layers import Dropout
+
+materials = df['Material'].unique()
+print(materials)             # for user reference while browsing
+
+while True:
+    try:
+        predict = input("Demand projection for :")
+        if predict.upper() in materials:
+            break
+    except ValueError:
+        print("Select from these available data :",materials)
+        continue
+
+material_data = df[df['Material'] == predict.upper()]
+
+# Define features and target variable
+features = ['Open', 'High', 'Low', 'Close', 'Volume']
+target_variable = 'Close'
+
+# Combine features and target variable
+selected_columns = features + [target_variable]
+
+# Extract relevant data
+data = material_data[selected_columns]
+
+# Scale the data
+scaler = MinMaxScaler()
+scaled_data = scaler.fit_transform(data)
+
+# Define seq_length (used during model training)
+seq_length = 7
+
+# Creating sequences for LSTM training
+X, y = [], []
+for i in range(len(scaled_data) - seq_length):
+    X.append(scaled_data[i:i+seq_length, :-1])  # Exclude the target variable
+    y.append(scaled_data[i+seq_length, -1])
+
+X, y = np.array(X), np.array(y)
+
+# Build LSTM model
+model = Sequential()
+model.add(Dropout(0.2))
+# First LSTM layer with return_sequences=True
+model.add(LSTM(units=100, activation='sigmoid', input_shape=(seq_length, X.shape[2]), return_sequences=True))
+# Second LSTM layer with return_sequences=True
+model.add(LSTM(units=100, activation='sigmoid', return_sequences=True))
+# Third LSTM layer without return_sequences
+model.add(LSTM(units=100, activation='sigmoid'))
+# Output layer
+model.add(Dense(units=1,activation='linear'))
+model.compile(optimizer='adam', loss='mean_squared_error')
+
+# Train the LSTM model
+model.fit(X, y, epochs=100, batch_size=32)
+
+while True:
+    try:
+        period = int(input("Enter the time period of demand prediction (in days): "))
+        if period > 0:
+            break
+    except ValueError:
+        print("Give a number (in integers)")
+        continue
+
+print(''' 
+    Enter the specific timeline you want to look up on (frequency)
+      
+      Day - D          Year - Y            Month End - ME      Month Start - MS 
+      Month - M        Business day - B    Weekly - W          Quarter end - Q\n
+      ''')
+
+while True:
+    try:
+        freq = input()
+        if freq.upper() in ['D','Y','ME','MS','M','B','W','Q']:
+            break
+    except ValueError:
+        print("Choose from the given frequencies")
+        continue
+
+future_dates = pd.date_range(start = df.index[-1], periods = period+1, freq = freq.upper())[1:]
+
+# Creating a DataFrame with these future dates as index
+future_data = pd.DataFrame(index=future_dates, columns=features)
+
+future_data.fillna(0, inplace=True)
+scaled_future_data = scaler.transform(future_data[features + [target_variable]])
+# Reshape the features for LSTM input
+scaled_future_data = scaled_future_data.reshape((1, len(features) + 1, period))
+# Use the trained LSTM model to project future demand
+future_predictions = model.predict(scaled_future_data)
+
+# Manually scaling the predictions back to the original range
+min_target = scaler.data_min_[-1]
+max_target = scaler.data_max_[1]
+future_predictions_original = future_predictions * (max_target - min_target) + min_target
+# Create a DataFrame with appropriate date index
+future_demand_df = pd.DataFrame(index=future_dates, columns=['Projected_Demand'])
+future_demand_df['Projected_Demand'] = future_predictions_original.squeeze()
+
+print('''
+      Choose an option 
+      
+      1) Tabular presentation
+      2) Graphical plot\n''')
+
+while True:
+    opted = input()
+
+    if opted == '1':
+        print(future_demand_df)
+        break
+
+    elif opted == '2':
+        # Plotting the projected demand
+        plt.figure(figsize=(12, 8))
+        plt.plot(future_demand_df.index, future_demand_df['Projected_Demand'], label='Projected Demand', marker='o')
+        plt.title(f'Projected Demand using LSTM\nfor {predict.upper()}')
+        plt.xlabel('Date')
+        plt.ylabel('Close Price')
+        plt.legend()
+        plt.show()
+
+        observed_data = df[df["Material"] == predict.upper()]['Close']
+        plt.plot(observed_data, label = 'Observed', marker = 'o', color = 'violet')
+        plt.title(f'Observed data\nfor {predict.upper()}')
+        plt.xlabel('Year')
+        plt.ylabel('Closed price')
+        plt.legend()
+        plt.show()
+        break
+
+    else:
+        continue
