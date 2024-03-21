@@ -15,22 +15,21 @@ def send_quotation_request(item, grade, quantity, dealer_emails):
     # Compose the email body
     body = f"Dear Sir/Ma'am,\n\nThis email is to request a quotation for the following :\n\nItem: {item}\nGrade/Type: {grade}\nQuantity: {quantity}\n\nPlease provide your best quotation at your earliest convenience.\n\nBest Regards,\nCompany A"
 
-    # Set up the MIME
-    message = MIMEMultipart()
-    message["From"] = sender_email
-    message["Subject"] = subject
-    message.attach(MIMEText(body, "plain"))
+    # Send the email to each dealer
+    for dealer_email in dealer_emails:
+        # Set up the MIME
+        message = MIMEMultipart()
+        message["From"] = sender_email
+        message["To"] = dealer_email
+        message["Subject"] = subject        
+        message.attach(MIMEText(body, "plain"))
 
-    # Connect to the SMTP server (in this case, using Gmail)
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
-        server.starttls()
+        # Connect to the SMTP server (in this case, using Gmail)
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
         
-        # Login to your Gmail account
-        server.login(sender_email, "iwexinxvgibwpeda")
-
-        # Send the email to each dealer
-        for dealer_email in dealer_emails:
-            message["To"] = dealer_email
+            # Login to your Gmail account
+            server.login(sender_email, "iwexinxvgibwpeda")
             server.sendmail(sender_email, dealer_email, message.as_string())
 
     print("Emails sent successfully!")
