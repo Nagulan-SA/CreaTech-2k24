@@ -161,7 +161,7 @@ for m in materials:
     plt.show()'''
 
 '''Forecasting using Auto Regression Integrated Moving Average(ARIMA) model'''
-
+'''
 from statsmodels.tsa.arima.model import ARIMA
 from sklearn.metrics import mean_squared_error
 
@@ -213,7 +213,7 @@ for material in materials:
     pred.index = future
     print(pred)
     pred.plot(figsize=(12,6))
-    plt.show()
+    plt.show()'''
 '''
 from pmdarima import auto_arima
 import warnings
@@ -252,7 +252,7 @@ test['Close'].plot(legend = True)
 plt.show()'''
 
 '''Forecasting using Long-Short Term Memory(LSTM) model'''
-'''
+
 from keras.models import Sequential
 from keras.layers import LSTM, Dense
 from sklearn.preprocessing import MinMaxScaler
@@ -344,4 +344,16 @@ plt.title(f'{cast.upper()}\nLSTM Forecast')
 plt.xlabel('Time Steps')
 plt.ylabel('Close Price (in INR)')
 plt.legend()
-plt.show()'''
+plt.show()
+
+date_index = df.index.tolist()
+
+# Plotting the forecast
+plt.figure(figsize=(12, 8))
+plt.plot(date_index[-len(test_original):], test_original, label='Observed')
+plt.plot(date_index[-len(predictions):], predictions, color='red', label='Forecast')
+plt.title(f'{cast.upper()}\nLSTM Forecast')
+plt.xlabel('Date')
+plt.ylabel('Close Price')
+plt.legend()
+plt.show()
