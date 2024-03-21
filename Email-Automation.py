@@ -90,7 +90,7 @@ def read_email_replies(item, grade, quantity):
                             if index in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']:
                                 place.append(loop-1)
                         if (place[-1] - place[-2]) == 2:
-                                print(" ".join(body_list[0:place[0]]))
+                                print(" ".join(body_list[0:place[-2]]))
 
 
             else:
