@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 #import pip
-#pip.main(['install','scikit-learn'])
+#pip.main(['install','tensorflow'])
 import seaborn as sns
 import matplotlib.pyplot as plt
 from statsmodels.tsa.arima.model import ARIMA
@@ -47,8 +47,8 @@ df['Date'] = pd.to_datetime(df['Date'])
 df.set_index('Date', inplace=True)
 
 # Feature engineering: Creating lag features
-df['lag1'] = df['Close'].shift(1)
-df['lag2'] = df['Close'].shift(2)
+#df['lag1'] = df['Close'].shift(1)
+#df['lag2'] = df['Close'].shift(2)
 
 test_result = adfuller(df['Close'])
 
@@ -77,8 +77,7 @@ autocorrelation_plot(df['Close'])
 plt.show()'''
 
 '''Historical closing price analysis for each material'''
-'''
-# Filter for unique materials
+
 materials = df['Material'].unique()
 
 for material in materials:
@@ -91,7 +90,7 @@ for material in materials:
     plt.xlabel('Year')
     plt.ylabel('Price (in INR)')
     plt.legend()
-    plt.show()'''
+    plt.show()
 
 '''Feature engineering to analyze and select most important feature'''
 
@@ -115,7 +114,7 @@ lasso.fit(X_train, y_train)
 coefficients = lasso.coef_
 feature_importance = {feature: coef for feature, coef in zip(X_train.columns, coefficients)}
 
-print("Feature Importance (Lasso Regression):\n")
+print("\nFeature Importance (Lasso Regression):\n")
 for feature, importance in feature_importance.items():
     print(f"{feature}: {importance}")
 
@@ -134,12 +133,12 @@ rf_model.fit(X, y)
 # Get feature importances
 feature_importance = rf_model.feature_importances_
 
-print("Feature Importance (Random Forest):\n")
+print("\nFeature Importance (Random Forest):\n")
 for feature, importance in zip(X.columns, feature_importance):
     print(f"{feature}: {importance}")
 
 '''Seasonal-trend decomposition'''
-
+'''
 from statsmodels.tsa.seasonal import seasonal_decompose
 
 materials = df['Material'].unique()
@@ -177,4 +176,90 @@ for m in materials:
     plt.title('Residual Component')
 
     plt.tight_layout()
-    plt.show()
+    plt.show()'''
+
+'''Forecasting using Long-Short Term Memory(LSTM) model'''
+
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
+from sklearn.preprocessing import MinMaxScaler
+
+materials = df['Material'].unique()
+print(materials)             # for user reference while browsing
+
+while True:
+    try:
+        cast = input("Price Forecast for :")
+        if cast.upper() in materials:
+            break
+    except ValueError:
+        print("Select from these available data :",materials)
+        continue
+
+material_data = df[df['Material'] == cast.upper()]
+
+target_variable = 'Close'    # Variable with higher feature importance is 'Close'
+
+# Extract the target variable
+data = material_data[[target_variable]].values
+
+# Normalize the data
+scaler = MinMaxScaler(feature_range=(0, 1))
+scaled_data = scaler.fit_transform(data)
+
+# Split data into training and testing sets
+train_size = int(len(scaled_data) * 0.8)
+train, test = scaled_data[:train_size], scaled_data[train_size:]
+
+# Function to create sequences for LSTM
+def create_sequences(data, sequence_length):
+    sequences = []
+    for i in range(len(data) - sequence_length):
+        seq = data[i:i+sequence_length]
+        sequences.append(seq)
+    return np.array(sequences)
+
+# Define sequence length
+sequence_length = 20              # We may need to tune this parameter
+
+# Create sequences for training
+train_sequences = create_sequences(train, sequence_length)
+
+# Build LSTM model
+model = Sequential()
+model.add(LSTM(units=50, return_sequences=True, input_shape=(train_sequences.shape[1], 1)))
+model.add(LSTM(units=50))
+model.add(Dense(units=1))
+model.compile(optimizer='adam', loss='mean_squared_error')
+
+# Train the model
+model.fit(train_sequences, train[sequence_length:], epochs=100, batch_size=32)
+
+# Create sequences for testing
+test_sequences = create_sequences(test, sequence_length)
+
+# Make predictions
+predictions = model.predict(test_sequences)
+
+# Inverse transform to get original scale
+predictions = scaler.inverse_transform(predictions)
+test_original = scaler.inverse_transform(test[sequence_length:])
+
+# Calculate evaluation metrics (e.g., MAE, MSE)
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+
+mae = mean_absolute_error(test_original, predictions)
+mse = mean_squared_error(test_original, predictions)
+
+print(f'Mean Absolute Error: {mae}')
+print(f'Mean Squared Error: {mse}')
+
+# Plotting the forecast
+plt.figure(figsize=(12, 8))
+plt.plot(test_original, label='Observed')
+plt.plot(predictions, color='red', label='Forecast')
+plt.title(f'{cast.upper()}\nLSTM Forecast')
+plt.xlabel('Time Steps')
+plt.ylabel('Close Price (in INR)')
+plt.legend()
+plt.show()
