@@ -1,8 +1,8 @@
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 #import pip
 #pip.main(['install','pmdarima'])
-import seaborn as sns
 import matplotlib.pyplot as plt
 from statsmodels.tsa.stattools import adfuller
 from pandas.plotting import autocorrelation_plot
@@ -10,6 +10,13 @@ from pandas.plotting import autocorrelation_plot
 df = pd.read_csv("C:/Users/Nagulan/Desktop/CreaTech 2k24/CreaTech-2k24/Material-OHLC.csv")
 
 '''Data Cleaning'''
+
+import datetime
+
+def str_to_datetime(s):
+  split = s.split('-')
+  year, month, day = int(split[0]), int(split[1]), int(split[2])
+  return datetime.datetime(year=year, month=month, day=day)
 
 cleaner = ['Open','High','Low','Close','Adj Close','Volume']
 
@@ -19,7 +26,8 @@ df.dropna(inplace = True)
 #    for k in cleaner:
 #        df[k][j] = float(df[k][j].replace(',','')) 
 
-df['Date'] = pd.to_datetime(df['Date'])
+df['Date'] = df['Date'].apply(str_to_datetime)
+#df['Date'] = pd.to_datetime(df['Date'])
 df.set_index(df['Date'], inplace = True)
 
 '''Plotting Volume Comparison between materials'''
@@ -254,7 +262,7 @@ plt.show()'''
 '''Forecasting using Long-Short Term Memory(LSTM) model'''
 
 from keras.models import Sequential
-from keras.layers import LSTM, Dense
+from keras.layers import LSTM, Dense, Input
 from sklearn.preprocessing import MinMaxScaler
 
 materials = df['Material'].unique()
@@ -284,8 +292,6 @@ scaled_data = scaler.fit_transform(data)
 train_size = int(len(scaled_data) * 0.8)
 train, test = scaled_data[:train_size], scaled_data[train_size:]
 
-
-
 # Function to create sequences for LSTM
 def create_sequences(data, sequence_length):
     sequences = []
@@ -301,16 +307,16 @@ sequence_length = 20              # We may need to tune this parameter
 train_sequences = create_sequences(train, sequence_length)
 
 # Build LSTM model
+
 model = Sequential()
 model.add(LSTM(units=100, activation = 'relu', return_sequences=True, input_shape=(train_sequences.shape[1], 1)))
 model.add(LSTM(units=100))
 model.add(Dense(units=1))
 model.compile(optimizer='adam', loss='mean_squared_error')
 
-print(model.summary())
-
 # Train the model
-model.fit(train_sequences, train[sequence_length:], epochs=100, batch_size=64)
+model.fit(train_sequences, train[sequence_length:], epochs=100, batch_size=16)
+print(model.summary())
 
 loss_per_epoch = model.history.history['loss']
 plt.plot(range(len(loss_per_epoch)), loss_per_epoch)
@@ -336,24 +342,186 @@ print(f'Mean Absolute Error: {mae}')
 print(f'Mean Squared Error: {mse}')
 
 # Plotting the forecast
+#plt.figure(figsize=(12, 8))
+#plt.plot(test_original, label='Observed')
+#plt.plot(predictions, color='red', linestyle = '-', label='Forecast')
+#plt.axhline(y=np.nanmean(predictions), color='violet', linestyle='--', linewidth=3, label='Avg')
+#plt.title(f'{cast.upper()}\nLSTM Forecast')
+#plt.xlabel('Time Steps')
+#plt.ylabel('Close Price (in INR)')
+#plt.legend()
+#plt.show()
+
+date_index = df.index.tolist()
+
+from copy import deepcopy
+
+recursive_predictions = []
+recursive_dates=np.concatenate([date_index[:train_size], date_index[train_size:]])
+last_window = deepcopy(train_sequences[-sequence_length:])
+
+for target_date in recursive_dates:
+    next_prediction=model.predict(last_window)
+    recursive_predictions.append(next_prediction)
+    next_prediction = np.array(next_prediction).reshape(1,sequence_length,1)
+    last_window = last_window[1:]
+    last_window = np.concatenate([last_window, next_prediction], axis=0)
+
+recursive_predictions = np.array(recursive_predictions)
+
+# Plotting the forecast
 plt.figure(figsize=(12, 8))
-plt.plot(test_original, label='Observed')
-plt.plot(predictions, color='red', linestyle = '-', label='Forecast')
+plt.plot(date_index[-len(test_original):], test_original, label = 'Observed')
+plt.plot(date_index[-len(predictions):], predictions, color='red', label = 'Predicted')
+plt.plot(recursive_dates, recursive_predictions.reshape(recursive_dates.shape[0],1), label = 'Forecast')
 plt.axhline(y=np.nanmean(predictions), color='violet', linestyle='--', linewidth=3, label='Avg')
-plt.title(f'{cast.upper()}\nLSTM Forecast')
-plt.xlabel('Time Steps')
+plt.title(f'{cast.upper()}\nLSTM Forecast\nMedian at {np.nanmean(predictions)} INR')
+plt.xlabel('Date')
 plt.ylabel('Close Price (in INR)')
 plt.legend()
 plt.show()
 
-date_index = df.index.tolist()
+'''
+df = pd.read_csv("C:/Users/Nagulan/Desktop/CreaTech 2k24/CreaTech-2k24/Material-OHLC.csv")
+df['Date'] = df['Date'].apply(str_to_datetime)
 
-# Plotting the forecast
-plt.figure(figsize=(12, 8))
-plt.plot(date_index[-len(test_original):], test_original, label='Observed')
-plt.plot(date_index[-len(predictions):], predictions, color='red', label='Forecast')
-plt.title(f'{cast.upper()}\nLSTM Forecast')
-plt.xlabel('Date')
-plt.ylabel('Close Price')
-plt.legend()
-plt.show()
+materials = df['Material'].unique()
+print(materials)             # for user reference while browsing
+
+while True:
+    try:
+        cast = input("Price Forecast for :")
+        if cast.upper() in materials:
+            break
+    except ValueError:
+        print("Select from these available data :",materials)
+        continue
+
+df = material_data[['Date', target_variable]]
+
+df.index = df.pop('Date')
+
+def df_to_windowed_df(dataframe, first_date_str, last_date_str, n=3):
+  first_date = str_to_datetime(first_date_str)
+  last_date  = str_to_datetime(last_date_str)
+
+  target_date = first_date
+  
+  dates = []
+  X, Y = [], []
+
+  last_time = False
+  while True:
+    df_subset = dataframe.loc[:target_date].tail(n+1)
+    
+    if len(df_subset) != n+1:
+      print(f'Error: Window of size {n} is too large for date {target_date}')
+      return
+
+    values = df_subset['Close'].to_numpy()
+    x, y = values[:-1], values[-1]
+
+    dates.append(target_date)
+    X.append(x)
+    Y.append(y)
+
+    next_week = dataframe.loc[target_date:target_date+datetime.timedelta(days=7)]
+    next_datetime_str = str(next_week.head(2).tail(1).index.values[0])
+    next_date_str = next_datetime_str.split('T')[0]
+    year_month_day = next_date_str.split('-')
+    year, month, day = year_month_day
+    next_date = datetime.datetime(day=int(day), month=int(month), year=int(year))
+    
+    if last_time:
+      break
+    
+    target_date = next_date
+
+    if target_date == last_date:
+      last_time = True
+    
+  ret_df = pd.DataFrame({})
+  ret_df['Target Date'] = dates
+  
+  X = np.array(X)
+  for i in range(0, n):
+    X[:, i]
+    ret_df[f'Target-{n-i}'] = X[:, i]
+  
+  ret_df['Target'] = Y
+
+  return ret_df
+
+windowed_df = df_to_windowed_df(df, '2015-01-06', '2024-03-20', n=3)
+
+def windowed_df_to_date_X_y(windowed_dataframe):
+  df_as_np = windowed_dataframe.to_numpy()
+
+  dates = df_as_np[:, 0]
+
+  middle_matrix = df_as_np[:, 1:-1]
+  X = middle_matrix.reshape((len(dates), middle_matrix.shape[1], 1))
+
+  Y = df_as_np[:, -1]
+
+  return dates, X.astype(np.float64), Y.astype(np.float64)
+
+dates, X, y = windowed_df_to_date_X_y(windowed_df)
+
+train_size_80 = int(len(dates) * .8)
+train_size_90 = int(len(dates) * .9)
+
+dates_train, X_train, y_train = dates[:train_size_80], X[:train_size_80], y[:train_size_80]
+dates_val, X_val, y_val = dates[train_size_80:train_size_90], X[train_size_80:train_size_90], y[train_size_80:train_size_90]
+dates_test, X_test, y_test = dates[train_size_90:], X[train_size_90:], y[train_size_90:]
+
+from keras.models import Sequential
+from keras.optimizers import Adam
+from keras import layers
+
+model = Sequential([layers.Input((3, 1)),
+                    layers.LSTM(64),
+                    layers.Dense(32, activation='relu'),
+                    layers.Dense(32, activation='relu'),
+                    layers.Dense(1)])
+
+model.compile(loss='mse', 
+              optimizer=Adam(learning_rate=0.001),
+              metrics=['mean_absolute_error'])
+
+model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=100)
+
+print(model.summary())
+
+train_predictions = model.predict(X_train).flatten()
+val_predictions = model.predict(X_val).flatten()
+test_predictions = model.predict(X_test).flatten()
+
+from copy import deepcopy
+
+recursive_predictions = []
+recursive_dates=np.concatenate([dates_val, dates_test])
+last_window = deepcopy(X_train[-1])
+
+for target_date in recursive_dates:
+    next_prediction=model.predict([last_window])
+    recursive_predictions.append(next_prediction)
+    last_window=np.concatenate([last_window[-2:],next_prediction])
+
+print(recursive_predictions)
+
+plt.plot(dates_train, train_predictions)
+plt.plot(dates_train, y_train)
+plt.plot(dates_val, val_predictions)
+plt.plot(dates_val, y_val)
+plt.plot(dates_test, test_predictions)
+plt.plot(dates_test, y_test)
+#plt.plot(recursive_dates, recursive_predictions)
+plt.legend(['Training Predictions', 
+            'Training Observations',
+            'Validation Predictions', 
+            'Validation Observations',
+            'Testing Predictions', 
+            'Testing Observations',
+            'Recursive Predictions'])
+plt.show()'''
