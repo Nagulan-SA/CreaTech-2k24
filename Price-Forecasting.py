@@ -1,11 +1,9 @@
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 #import pip
 #pip.main(['install','pmdarima'])
 import matplotlib.pyplot as plt
 from statsmodels.tsa.stattools import adfuller
-from pandas.plotting import autocorrelation_plot
 
 df = pd.read_csv("C:/Users/Nagulan/Desktop/CreaTech 2k24/CreaTech-2k24/Material-OHLC.csv")
 
@@ -21,6 +19,8 @@ def str_to_datetime(s):
 cleaner = ['Open','High','Low','Close','Adj Close','Volume']
 
 df.dropna(inplace = True)
+
+target_variable = 'Close'
 
 #for j in range(0, len(df)):
 #    for k in cleaner:
@@ -49,23 +49,6 @@ plt.legend()
 plt.grid(True)
 plt.show()'''
 
-'''Augmented Dickey-Fuller(ADF) Test for recording the stationary state'''
-
-def adfuller_test(sales):
-    result = adfuller(sales)
-    labels = ['ADF Test Statistic','p-value','#Lags Used','Number of Observations Used']
-    for value, label in zip(result,labels):
-        print(label+' : '+str(value) )
-    if result[1] <= 0.05:       # more negative, the stronger the rejection of null hypothesis
-        print("Strong evidence against the null hypothesis(Ho), reject the null hypothesis. Data has no unit root and is stationary")
-    else:
-        print("Weak evidence against null hypothesis, time series has a unit root, indicating it is non-stationary ")
-
-adfuller_test(df['Close'])
-
-#autocorrelation_plot(df['Close'])     # Correlation plot
-#plt.show()
-
 '''Historical closing price analysis for each material'''
 '''
 materials = df['Material'].unique()
@@ -90,7 +73,7 @@ from sklearn.model_selection import train_test_split
 
 # Separate features and target variable
 X = df[['Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close']]
-y = df['Close']
+y = df[target_variable]
 
 # Split the data into training and testing sets
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -112,7 +95,7 @@ from sklearn.ensemble import RandomForestRegressor
 
 # Separate features and target variable
 X = df[['Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close']]
-y = df['Close']
+y = df[target_variable]
 
 # Initialize Random Forest model
 rf_model = RandomForestRegressor(random_state=42)
@@ -169,98 +152,106 @@ for m in materials:
     plt.show()'''
 
 '''Forecasting using Auto Regression Integrated Moving Average(ARIMA) model'''
-'''
+
 from statsmodels.tsa.arima.model import ARIMA
 from sklearn.metrics import mean_squared_error
 
 materials = df['Material'].unique()
+print(materials)             # for user reference while browsing
 
-for material in materials:
-    material_data = df[df['Material'] == material]
-    
-    df_resampled = material_data.resample('B').mean(numeric_only= True)
+while True:
+    try:
+        cast = input("Price Forecast for :")
+        if cast.upper() in materials:
+            break
+    except ValueError:
+        print("Select from these available data :",materials)
+        continue
 
-    # Feature engineering: Create lag features
-    df_resampled['lag1'] = df_resampled['Close'].shift(1)
-    df_resampled['lag2'] = df_resampled['Close'].shift(2)
+material_data = df[df['Material'] == cast.upper()]
+
+material_data = material_data[['Material',target_variable]]
+
+def adfuller_test(sales):    #Augmented Dickey-Fuller(ADF) Test for recording the stationary state
+    result = adfuller(sales)
+    labels = ['ADF Test Statistic','p-value','#Lags Used','Number of Observations Used']
+    for value, label in zip(result,labels):
+        print(label+' : '+str(value) )
+    if result[1] <= 0.05:       # more negative, the stronger the rejection of null hypothesis
+        print("Strong evidence against the null hypothesis(Ho), reject the null hypothesis. Data has no unit root and is stationary")
+        return "Great to go"
+    else:
+        print('''Weak evidence against null hypothesis, time series has a unit root, indicating it is non-stationary 
+              Insufficient data to proceed. Please try other companies!''')
+        return "Insufficient data"
+
+adfuller_test(material_data[target_variable])
+
+while adfuller_test(material_data[target_variable]) == "Great to go":
+    # Finding out best order for ARIMA model
+    import pmdarima
+    from pmdarima import auto_arima
+    import warnings
+
+    warnings.filterwarnings("ignore")
+
+    stepwise_fit = auto_arima(material_data[target_variable], trace = True, suppress_warnings = True)
+    stepwise_fit.summary()
+
+    # Autocorrelation plot
+    #pmdarima.plot_acf(material_data[target_variable])
 
     # Train-test split
-    train_size = int(len(df_resampled) * 0.8)
-    train, test = df_resampled[:train_size], df_resampled[train_size:]
+    train_size = int(len(material_data) * 0.8)
+    train, test = material_data[:train_size], material_data[train_size:]
 
     train.dropna(inplace = True)
     test.dropna(inplace = True)
 
     # ARIMA model
-    model = ARIMA(train['Close'], order=(1, 1, 1))
-    fit_model = model.fit()
+    model = ARIMA(train[target_variable], order=(2, 1, 3))
+    model = model.fit()
+    print(model.summary())
 
-    # Forecast
-    forecast = fit_model.forecast(steps=len(test))
+    # Predictions on test set
+    start = len(train)
+    end = len(train)+len(test)-1
+    forecast = model.predict(start, end, typ = 'levels')
+    forecast.index = material_data.index[start:end+1]
 
-    # Evaluate performance
-    mse = mean_squared_error(test['Close'], forecast)
+    #forecast.plot(legend = True)
+    #test[target_variable].plot(legend = True)
+    #plt.show()
+
+    from math import sqrt
+
+    mse = sqrt(mean_squared_error(forecast, test[target_variable]))
     print(f'Mean Squared Error: {mse}')
-    
+
     # Plot actual vs. forecasted
     plt.figure(figsize=(12, 6))
-    plt.plot(train.index, train['Close'], label='Train')
-    plt.plot(test.index, test['Close'], label='Test')
-    plt.plot(test.index, forecast, label='Forecast', linestyle='dashed')
-    plt.title(f'Price Forecasting using ARIMA\nfor {material}\nMedian at {np.nanmean(forecast)}')
-    plt.axhline(y=np.nanmean(forecast), color='violet', linestyle='--', linewidth=3, label='Avg')
+    plt.plot(train.index, train[target_variable], label='Train')
+    plt.plot(test.index, test[target_variable], label='Test')
+    plt.plot(forecast.index, forecast, label='Forecast', linestyle='dashed')
+    plt.title(f'Price Forecasting using ARIMA\nfor {cast.upper()}\nMedian at {np.nanmean(forecast)}')
+    plt.axhline(y=np.nanmean(forecast), color='violet', linestyle='--', linewidth=1, label='Avg')
     plt.xlabel('Date')
-    plt.ylabel('Close Price (in INR)')
+    plt.ylabel(f'{target_variable} Price (in INR)')
     plt.legend()
     plt.show()
 
     future_date = input('Enter the date you want to predict : ')
     end_date = input("Enter the end date : ")
     future = pd.date_range(start = pd.to_datetime(future_date), end = pd.to_datetime(end_date))
-    pred = fit_model.predict(len(df_resampled), len(df_resampled) + len(future) - 1, dynamic = True, typ = 'levels').rename("Predictions")
+    pred = model.predict(len(material_data), len(material_data) + len(future) - 1, typ = 'levels').rename("Predictions")
     pred.index = future
+    pred.plot(figsize=(12,6), legend = True)
+    plt.show()
     print(pred)
-    pred.plot(figsize=(12,6))
-    plt.show()'''
-'''
-from pmdarima import auto_arima
-import warnings
-
-warnings.filterwarnings("ignore")
-
-stepwise_fit = auto_arima(df['Close'], trace = True, suppress_warnings = True)
-stepwise_fit.summary()
-
-from statsmodels.tsa.arima.model import ARIMA
-
-df = df[df['Material'] == "SAIL STEEL"]
-
-train_len = int(len(df) * 0.8)
-
-train, test = df[:train_len], df[train_len:]
-#train.dropna(inplace = True )
-#test = df.iloc[-300:]
-#test.dropna(inplace = True)
-
-#print(df.shape)
-#print(train.shape, test.shape)
-
-model = ARIMA((train['Close']), order = (0,1,0))
-model = model.fit()
-model.summary()
-
-start = len(train)
-end = len(train) + len(test) - 1
-#index_date = pd.date_range("2024-03-22","2024-03-29")
-pred = model.predict(start = start, end = end, typ = 'levels')
-print(pred)
-
-pred.plot(label = 'Forecast', legend = True)
-test['Close'].plot(legend = True)
-plt.show()'''
+    break
 
 '''Forecasting using Long-Short Term Memory(LSTM) model'''
-
+'''
 from keras.models import Sequential
 from keras.layers import LSTM, Dense, Input
 from sklearn.preprocessing import MinMaxScaler
@@ -373,155 +364,10 @@ recursive_predictions = np.array(recursive_predictions)
 plt.figure(figsize=(12, 8))
 plt.plot(date_index[-len(test_original):], test_original, label = 'Observed')
 plt.plot(date_index[-len(predictions):], predictions, color='red', label = 'Predicted')
-plt.plot(recursive_dates, recursive_predictions.reshape(recursive_dates.shape[0],1), label = 'Forecast')
+plt.plot(recursive_dates, recursive_predictions[:,0,:], label = 'Forecast')
 plt.axhline(y=np.nanmean(predictions), color='violet', linestyle='--', linewidth=3, label='Avg')
 plt.title(f'{cast.upper()}\nLSTM Forecast\nMedian at {np.nanmean(predictions)} INR')
 plt.xlabel('Date')
-plt.ylabel('Close Price (in INR)')
+plt.ylabel(f'{target_variable} Price (in INR)')
 plt.legend()
-plt.show()
-
-'''
-df = pd.read_csv("C:/Users/Nagulan/Desktop/CreaTech 2k24/CreaTech-2k24/Material-OHLC.csv")
-df['Date'] = df['Date'].apply(str_to_datetime)
-
-materials = df['Material'].unique()
-print(materials)             # for user reference while browsing
-
-while True:
-    try:
-        cast = input("Price Forecast for :")
-        if cast.upper() in materials:
-            break
-    except ValueError:
-        print("Select from these available data :",materials)
-        continue
-
-df = material_data[['Date', target_variable]]
-
-df.index = df.pop('Date')
-
-def df_to_windowed_df(dataframe, first_date_str, last_date_str, n=3):
-  first_date = str_to_datetime(first_date_str)
-  last_date  = str_to_datetime(last_date_str)
-
-  target_date = first_date
-  
-  dates = []
-  X, Y = [], []
-
-  last_time = False
-  while True:
-    df_subset = dataframe.loc[:target_date].tail(n+1)
-    
-    if len(df_subset) != n+1:
-      print(f'Error: Window of size {n} is too large for date {target_date}')
-      return
-
-    values = df_subset['Close'].to_numpy()
-    x, y = values[:-1], values[-1]
-
-    dates.append(target_date)
-    X.append(x)
-    Y.append(y)
-
-    next_week = dataframe.loc[target_date:target_date+datetime.timedelta(days=7)]
-    next_datetime_str = str(next_week.head(2).tail(1).index.values[0])
-    next_date_str = next_datetime_str.split('T')[0]
-    year_month_day = next_date_str.split('-')
-    year, month, day = year_month_day
-    next_date = datetime.datetime(day=int(day), month=int(month), year=int(year))
-    
-    if last_time:
-      break
-    
-    target_date = next_date
-
-    if target_date == last_date:
-      last_time = True
-    
-  ret_df = pd.DataFrame({})
-  ret_df['Target Date'] = dates
-  
-  X = np.array(X)
-  for i in range(0, n):
-    X[:, i]
-    ret_df[f'Target-{n-i}'] = X[:, i]
-  
-  ret_df['Target'] = Y
-
-  return ret_df
-
-windowed_df = df_to_windowed_df(df, '2015-01-06', '2024-03-20', n=3)
-
-def windowed_df_to_date_X_y(windowed_dataframe):
-  df_as_np = windowed_dataframe.to_numpy()
-
-  dates = df_as_np[:, 0]
-
-  middle_matrix = df_as_np[:, 1:-1]
-  X = middle_matrix.reshape((len(dates), middle_matrix.shape[1], 1))
-
-  Y = df_as_np[:, -1]
-
-  return dates, X.astype(np.float64), Y.astype(np.float64)
-
-dates, X, y = windowed_df_to_date_X_y(windowed_df)
-
-train_size_80 = int(len(dates) * .8)
-train_size_90 = int(len(dates) * .9)
-
-dates_train, X_train, y_train = dates[:train_size_80], X[:train_size_80], y[:train_size_80]
-dates_val, X_val, y_val = dates[train_size_80:train_size_90], X[train_size_80:train_size_90], y[train_size_80:train_size_90]
-dates_test, X_test, y_test = dates[train_size_90:], X[train_size_90:], y[train_size_90:]
-
-from keras.models import Sequential
-from keras.optimizers import Adam
-from keras import layers
-
-model = Sequential([layers.Input((3, 1)),
-                    layers.LSTM(64),
-                    layers.Dense(32, activation='relu'),
-                    layers.Dense(32, activation='relu'),
-                    layers.Dense(1)])
-
-model.compile(loss='mse', 
-              optimizer=Adam(learning_rate=0.001),
-              metrics=['mean_absolute_error'])
-
-model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=100)
-
-print(model.summary())
-
-train_predictions = model.predict(X_train).flatten()
-val_predictions = model.predict(X_val).flatten()
-test_predictions = model.predict(X_test).flatten()
-
-from copy import deepcopy
-
-recursive_predictions = []
-recursive_dates=np.concatenate([dates_val, dates_test])
-last_window = deepcopy(X_train[-1])
-
-for target_date in recursive_dates:
-    next_prediction=model.predict([last_window])
-    recursive_predictions.append(next_prediction)
-    last_window=np.concatenate([last_window[-2:],next_prediction])
-
-print(recursive_predictions)
-
-plt.plot(dates_train, train_predictions)
-plt.plot(dates_train, y_train)
-plt.plot(dates_val, val_predictions)
-plt.plot(dates_val, y_val)
-plt.plot(dates_test, test_predictions)
-plt.plot(dates_test, y_test)
-#plt.plot(recursive_dates, recursive_predictions)
-plt.legend(['Training Predictions', 
-            'Training Observations',
-            'Validation Predictions', 
-            'Validation Observations',
-            'Testing Predictions', 
-            'Testing Observations',
-            'Recursive Predictions'])
 plt.show()'''
