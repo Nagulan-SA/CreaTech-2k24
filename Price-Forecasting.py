@@ -20,7 +20,7 @@ cleaner = ['Open','High','Low','Close','Adj Close','Volume']
 
 df.dropna(inplace = True)
 
-target_variable = 'Close'
+target_variable = 'Volume'
 
 #for j in range(0, len(df)):
 #    for k in cleaner:
@@ -29,25 +29,6 @@ target_variable = 'Close'
 df['Date'] = df['Date'].apply(str_to_datetime)
 #df['Date'] = pd.to_datetime(df['Date'])
 df.set_index(df['Date'], inplace = True)
-
-'''Plotting Volume Comparison between materials'''
-'''
-product_column = 'Material'
-sales_column = 'Volume'
-
-plt.figure(figsize=(10,6))
-
-for product in df[product_column].unique():
-    product_data = df[df[product_column] == product]
-    plt.plot(product_data[sales_column], label = product)
-
-plt.xlabel('Materials')
-plt.ylabel('Volume')
-plt.title('Volume for different Materials')
-plt.xticks(rotation=45)
-plt.legend()
-plt.grid(True)
-plt.show()'''
 
 '''Historical closing price analysis for each material'''
 '''
@@ -66,7 +47,7 @@ for material in materials:
     plt.show()'''
 
 '''Feature Engineering to analyze and select most important feature'''
-
+'''
 #Lasso Regression for Feature Selection
 from sklearn.linear_model import Lasso
 from sklearn.model_selection import train_test_split
@@ -108,7 +89,7 @@ feature_importance = rf_model.feature_importances_
 
 print("\nFeature Importance (Random Forest):\n")
 for feature, importance in zip(X.columns, feature_importance):
-    print(f"{feature}: {importance}")
+    print(f"{feature}: {importance}")'''
 
 '''Seasonal-trend Decomposition'''
 '''
@@ -236,7 +217,7 @@ while adfuller_test(material_data[target_variable]) == "Great to go":
     plt.title(f'Price Forecasting using ARIMA\nfor {cast.upper()}\nMedian at {np.nanmean(forecast)}')
     plt.axhline(y=np.nanmean(forecast), color='violet', linestyle='--', linewidth=1, label='Avg')
     plt.xlabel('Date')
-    plt.ylabel(f'{target_variable} Price (in INR)')
+    plt.ylabel(f'{target_variable}')
     plt.legend()
     plt.show()
 
